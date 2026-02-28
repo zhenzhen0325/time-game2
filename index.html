@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>历史时间轴游戏</title>
+    <style>
+        :root {
+            --orange-dark: #d35400;
+            --orange-light: #e67e22;
+            --white: #ffffff;
+            --white-trans: rgba(255, 255, 255, 0.2);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, var(--orange-dark) 0%, var(--orange-light) 100%);
+            color: var(--white);
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .game-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            position: relative;
+        }
+
+        /* 头部信息 */
+        .header-info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 200;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+        }
+        .game-title { font-size: 32px; font-weight: bold; }
+        .score { font-size: 20px; margin-top: 5px; }
+        
+        /* 游戏结果提示 */
+        #result-message {
+            position: absolute;
+            top: 50%;
+            left: 37%;
+            transform: translate(-50%, -50%);
+            font-size: 60px;
+            font-weight: bold;
+            z-index: 150;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #result-message.show { opacity: 1; }
+        #result-message.correct { color: #2ecc71; }
+        #result-message.wrong { color: #e74c3c; }
+
+
+        /* 左侧游戏区 - 跑道 */
+        .game-area {
+            flex: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+            border-right: 3px solid var(--white);
+        }
+
+        .lane {
+            width: 33.333%;
+            height: 100%;
+            border-left: 2px dashed var(--white-trans);
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .lane:first-child { border-left: none; }
+        .lane:hover { background: rgba(255, 255, 255, 0.05); }
+
+        /* 选项盒子 */
+        .option-box {
+            position: absolute;
+            top: -200px;
+            left: 10%;
+            width: 80%;
+            height: 150px;
+            background: var(--white-trans);
+            border: 2px solid var(--white);
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 10px;
+            pointer-events: none;
+        }
+        
+        .game-area.running .option-box {
+            animation: move-down 4s linear forwards;
+        }
+
+        @keyframes move-down {
+            from { top: -200px; }
+            to { top: 110vh; }
+        }
+
+        /* 奔跑的小人 */
+        .runner {
+            position: absolute;
+            bottom: 10%;
+            width: 40px;
+            height: 60px;
+            z-index: 100;
+            transition: left 0.2s ease-out;
+            pointer-events: none;
+        }
+
+        .runner-head { width: 20px; height: 20px; background: white; border-radius: 50%; margin: 0 auto; }
+        .runner-body { width: 4px; height: 25px; background: white; margin: 0 auto; }
+        .runner-legs { display: flex; justify-content: center; gap: 8px; }
+        .leg { width: 4px; height: 15px; background: white; animation: run 0.3s infinite alternate; }
+        .leg:nth-child(2) { animation-delay: 0.15s; }
+        @keyframes run { from { transform: rotate(-35deg); } to { transform: rotate(35deg); } }
+
+
+        /* 右侧时间轴 */
+        .timeline {
+            width: 300px;
+            background: rgba(0, 0, 0, 0.15);
+            padding: 20px;
+            overflow-y: auto;
+            scroll-behavior: smooth; /* 【新增】平滑滚动效果 */
+        }
+        .timeline-item { 
+            margin: 15px 0; 
+            padding: 15px; 
+            background: var(--white-trans); 
+            border-radius: 8px; 
+            border: 2px solid var(--white); 
+            transition: all 0.3s;
+            min-height: 80px; /* 【新增】确保每个项目有最小高度 */
+        }
+        .timeline-item.active { 
+            animation: blink 1s infinite; 
+            transform: scale(1.08); 
+            background: rgba(255, 255, 255, 0.5);
+            border-color: #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
+        }
+        .timeline-item.completed { 
+            opacity: 0.4; 
+            background: rgba(46, 204, 113, 0.2);
+            transform: scale(0.95);
+        }
+        @keyframes blink { 
+            0%, 100% { box-shadow: 0 0 15px rgba(255, 255, 255, 0.7); } 
+            50% { box-shadow: 0 0 35px rgba(255, 255, 255, 1); } 
+        }
+        .year { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+
+        /* 覆盖层 */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 1000; transition: opacity 0.5s;
+        }
+        .overlay.hidden { opacity: 0; pointer-events: none; }
+        .overlay h1, .overlay h2 { font-size: 48px; margin-bottom: 20px; text-shadow: none; }
+        .overlay p { font-size: 18px; margin-bottom: 40px; text-align: center; line-height: 1.6; max-width: 600px; }
+        .overlay p strong { color: var(--orange-light); font-size: 20px; }
+
+        button {
+            padding: 15px 40px; font-size: 24px; background: var(--white); color: var(--orange-dark);
+            border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: all 0.3s;
+        }
+        button:hover { transform: scale(1.1); box-shadow: 0 0 20px rgba(255, 255, 255, 0.8); }
+
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <!-- 开始屏幕 -->
+        <div class="overlay" id="startScreen">
+            <h1>📚 历史时间轴游戏</h1>
+            <p>
+                游戏规则：<br>
+                使用键盘 <strong>← →</strong> 左右箭头，<br>
+                <strong>或直接点击跑道</strong>来移动小人。<br>
+                根据右侧闪烁的年份，选择正确的历史事件！<br>
+                答对后时间轴会向上推进。
+            </p>
+            <button onclick="startGame()">开始游戏</button>
+        </div>
+
+        <!-- 游戏结束屏幕 -->
+        <div class="overlay hidden" id="gameOver">
+            <h2 id="gameOverTitle">游戏结束！</h2>
+            <p>你的得分：<span id="finalScore"></span></p>
+            <button onclick="restartGame()">再来一局</button>
+        </div>
+
+        <!-- 头部信息 -->
+        <div class="header-info">
+            <div class="game-title">历史时间轴游戏</div>
+            <div class="score">得分：<span id="score">0</span> / <span id="total">0</span></div>
+        </div>
+        
+        <!-- 结果提示 -->
+        <div id="result-message"></div>
+
+        <!-- 游戏跑道区域 -->
+        <div class="game-area" id="gameArea">
+            <div class="lane" onclick="selectLane(0)"><div class="option-box" id="option0"></div></div>
+            <div class="lane" onclick="selectLane(1)"><div class="option-box" id="option1"></div></div>
+            <div class="lane" onclick="selectLane(2)"><div class="option-box" id="option2"></div></div>
+            
+            <div class="runner" id="runner">
+                <div class="runner-head"></div><div class="runner-body"></div><div class="runner-legs"><div class="leg"></div><div class="leg"></div></div>
+            </div>
+        </div>
+
+        <!-- 右侧时间轴 -->
+        <div class="timeline" id="timeline"></div>
+    </div>
+
+    <script>
+        // 【修改】历史数据按时间顺序排列，不再打乱
+        const historyData = [
+            { year: 1949, event: "中华人民共和国成立" },
+            { year: 1950, event: "土地改革、抗美援朝" },
+            { year: 1951, event: "西藏和平解放" },
+            { year: 1953, event: "三大改造开始、'一五'计划实施" },
+            { year: 1954, event: "第一届全国人民代表大会召开，颁布第一部宪法" },
+            { year: 1956, event: "三大改造完成；中共八大召开" },
+            { year: 1958, event: "'大跃进'和人民公社化运动" },
+            { year: 1961, event: "提出'八字'调整方针" },
+            { year: 1966, event: "'文化大革命'开始" },
+            { year: 1971, event: "粉碎林彪反革命集团" },
+            { year: 1976, event: "粉碎江青反革命集团，'文化大革命'结束" },
+            { year: 1978, event: "中共十一届三中全会召开；推行家庭联产承包责任制" },
+            { year: 1980, event: "建立4个经济特区；刘少奇冤案平反" },
+            { year: 1984, event: "城市经济体制改革启动" },
+            { year: 1992, event: "提出建立社会主义市场经济体制" },
+            { year: 2017, event: "习近平新时代中国特色社会主义思想形成（党的十九大）" }
+        ];
+
+        const distractors = [
+            "开国大典在天安门广场举行", "土地改革运动全面展开", "新疆和平解放", 
+            "第一个五年计划开始实施", "人民代表大会制度确立", "社会主义制度基本建立", 
+            "人民公社化运动开始", "国民经济调整时期开始", "十年动乱时期开始", 
+            "九一三事件发生", "十年浩劫结束", "改革开放开始", "经济特区建立", 
+            "改革开放深化", "社会主义市场经济体制目标确立", "全面建成小康社会决胜阶段", 
+            "抗日战争胜利", "解放战争开始", "三大战役胜利", "渡江战役发起", 
+            "五年计划超额完成", "公私合营全面展开", "反右派斗争开始", 
+            "庐山会议召开", "三年困难时期", "四个现代化提出"
+        ];
+
+        // 游戏变量
+        let currentQuestion = 0;
+        let score = 0;
+        let correctAnswerIndex = 0;
+        let gameActive = false;
+        let currentLane = 1;
+        const GAME_SPEED = 4000;
+
+        // DOM 元素
+        const runner = document.getElementById('runner');
+        const gameArea = document.getElementById('gameArea');
+        const timelineDiv = document.getElementById('timeline');
+        const optionBoxes = [
+            document.getElementById('option0'), 
+            document.getElementById('option1'), 
+            document.getElementById('option2')
+        ];
+        const resultMessage = document.getElementById('result-message');
+        
+        // --- 控制器 ---
+        
+        function selectLane(laneIndex) {
+            if (!gameActive) return;
+            currentLane = laneIndex;
+            moveRunner();
+        }
+
+        document.addEventListener('keydown', handleKeyPress);
+        function handleKeyPress(e) {
+            if (!gameActive) return;
+            if (e.key === 'ArrowLeft') {
+                currentLane = Math.max(0, currentLane - 1);
+            } else if (e.key === 'ArrowRight') {
+                currentLane = Math.min(2, currentLane + 1);
+            }
+            moveRunner();
+        }
+
+        // --- 核心游戏逻辑 ---
+        
+        function moveRunner() {
+            const laneWidth = gameArea.offsetWidth / 3;
+            const targetLeft = (currentLane * laneWidth) + (laneWidth / 2) - (runner.offsetWidth / 2);
+            runner.style.left = `${targetLeft}px`;
+        }
+
+        function startGame() {
+            document.getElementById('startScreen').classList.add('hidden');
+            setTimeout(() => {
+                initGame();
+                gameActive = true;
+            }, 500);
+        }
+
+        function initGame() {
+            // 【修改】不再打乱顺序，按时间顺序显示
+            timelineDiv.innerHTML = '';
+            historyData.forEach((item, index) => {
+                timelineDiv.innerHTML += `<div class="timeline-item" id="timeline-${index}"><div class="year">${item.year}年</div></div>`;
+            });
+
+            currentQuestion = 0;
+            score = 0;
+            currentLane = 1;
+            moveRunner();
+            updateScore();
+            
+            // 【新增】滚动到顶部
+            timelineDiv.scrollTop = 0;
+            
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            if (currentQuestion >= historyData.length) {
+                endGame(true);
+                return;
+            }
+            
+            gameArea.classList.remove('running');
+            void gameArea.offsetWidth;
+
+            // 【新增】滚动时间轴，让当前问题始终在顶部可见
+            scrollToCurrentQuestion();
+
+            document.querySelectorAll('.timeline-item').forEach((item, i) => {
+                item.classList.remove('active', 'completed');
+                if (i < currentQuestion) {
+                    item.classList.add('completed');
+                } else if (i === currentQuestion) {
+                    item.classList.add('active');
+                }
+            });
+
+            // 【修改】使用当前问题，不再随机
+            const current = historyData[currentQuestion];
+            const options = [current.event];
+            
+            // 添加两个干扰项
+            const tempDistractors = [...distractors].filter(d => d !== current.event);
+            while (options.length < 3) {
+                const randIndex = Math.floor(Math.random() * tempDistractors.length);
+                options.push(tempDistractors.splice(randIndex, 1)[0]);
+            }
+
+            // 打乱选项位置
+            options.sort(() => Math.random() - 0.5);
+            correctAnswerIndex = options.indexOf(current.event);
+
+            options.forEach((opt, i) => { optionBoxes[i].textContent = opt; });
+
+            setTimeout(() => {
+                gameActive = true;
+                gameArea.classList.add('running');
+                setTimeout(checkAnswer, GAME_SPEED);
+            }, 500);
+        }
+
+        // 【新增】滚动时间轴函数
+        function scrollToCurrentQuestion() {
+            const currentItem = document.getElementById(`timeline-${currentQuestion}`);
+            if (currentItem) {
+                // 滚动到当前项目，留出一点顶部空间
+                const offsetTop = currentItem.offsetTop - 20;
+                timelineDiv.scrollTo({
+                    top: offsetTop,
+                    behavior: 'smooth'
+                });
+            }
+        }
+
+        function checkAnswer() {
+            gameActive = false;
+            
+            if (currentLane === correctAnswerIndex) {
+                score++;
+                updateScore();
+                showResultMessage(true);
+                setTimeout(() => {
+                    currentQuestion++;
+                    loadQuestion();
+                }, 1000);
+            } else {
+                showResultMessage(false);
+                setTimeout(() => {
+                    endGame(false);
+                }, 1500);
+            }
+        }
+        
+        function showResultMessage(isCorrect) {
+            resultMessage.textContent = isCorrect ? "✓ 正确!" : "✗ 错误!";
+            resultMessage.className = isCorrect ? 'show correct' : 'show wrong';
+            setTimeout(() => { resultMessage.className = ''; }, 800);
+        }
+
+        function updateScore() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('total').textContent = historyData.length;
+        }
+
+        function endGame(isWin) {
+            gameActive = false;
+            const gameOverDiv = document.getElementById('gameOver');
+            if (isWin) {
+                document.getElementById('gameOverTitle').textContent = '🎉 恭喜通关！';
+                document.getElementById('finalScore').textContent = `${score} / ${historyData.length} (满分!)`;
+            } else {
+                document.getElementById('gameOverTitle').textContent = '💪 继续加油！';
+                document.getElementById('finalScore').textContent = `${score} / ${historyData.length}`;
+            }
+            gameOverDiv.classList.remove('hidden');
+        }
+
+        function restartGame() {
+            document.getElementById('gameOver').classList.add('hidden');
+            startGame();
+        }
+    </script>
+</body>
+</html>
